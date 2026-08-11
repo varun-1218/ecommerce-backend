@@ -1,0 +1,12 @@
+# Compiled files 
+target/ 
+*.class 
+# IDE files 
+.classpath 
+.project 
+.settings/ 
+.idea/ 
+*.iml 
+# Application secrets 
+application.properties 
+application-local.properties 
