@@ -26,7 +26,7 @@ public class Cart {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
     
-    @OneToMany(mappedBy = "cart", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OneToMany(mappedBy = "cart", cascade = CascadeType.PERSIST, orphanRemoval = true)
     private List<CartItem> cartItems = new ArrayList<>();
     
     private BigDecimal totalPrice = BigDecimal.ZERO;

@@ -1,6 +1,7 @@
 package com.varun.ecommerce.service;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;   // <-- ADD THIS
 import java.util.Optional;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -47,29 +48,24 @@ public class CartServiceImpl implements CartService {
         Product product = productRepository.findById(productId)
             .orElseThrow(() -> new RuntimeException("Product not found"));
         
-        // Check stock availability
         if (product.getStockQuantity() < quantity) {
             throw new RuntimeException("Insufficient stock. Available: " + product.getStockQuantity());
         }
         
-        // Get or create cart for user
         Cart cart = cartRepository.findByUser(user)
             .orElseGet(() -> {
                 Cart newCart = new Cart(user);
                 return cartRepository.save(newCart);
             });
         
-        // Check if product already exists in cart
         Optional<CartItem> existingCartItem = cartItemRepository.findByCartAndProduct(cart, product);
         
         if (existingCartItem.isPresent()) {
-            // Update quantity
             CartItem cartItem = existingCartItem.get();
             cartItem.setQuantity(cartItem.getQuantity() + quantity);
             cartItem.setPrice(product.getPrice().multiply(BigDecimal.valueOf(cartItem.getQuantity())));
             cartItemRepository.save(cartItem);
         } else {
-            // Add new item
             CartItem cartItem = new CartItem();
             cartItem.setCart(cart);
             cartItem.setProduct(product);
@@ -78,9 +74,7 @@ public class CartServiceImpl implements CartService {
             cartItemRepository.save(cartItem);
         }
         
-        // Update cart total
         updateCartTotal(cart);
-        
         return convertToDTO(cart);
     }
     
@@ -96,13 +90,10 @@ public class CartServiceImpl implements CartService {
     public CartDTO updateCartItemQuantity(Long userId, Long productId, Integer quantity) {
         User user = userRepository.findById(userId)
             .orElseThrow(() -> new RuntimeException("User not found"));
-        
         Product product = productRepository.findById(productId)
             .orElseThrow(() -> new RuntimeException("Product not found"));
-        
         Cart cart = cartRepository.findByUser(user)
             .orElseThrow(() -> new RuntimeException("Cart not found"));
-        
         CartItem cartItem = cartItemRepository.findByCartAndProduct(cart, product)
             .orElseThrow(() -> new RuntimeException("Cart item not found"));
         
@@ -113,9 +104,7 @@ public class CartServiceImpl implements CartService {
             cartItem.setPrice(product.getPrice().multiply(BigDecimal.valueOf(quantity)));
             cartItemRepository.save(cartItem);
         }
-        
         updateCartTotal(cart);
-        
         return convertToDTO(cart);
     }
     
@@ -124,16 +113,12 @@ public class CartServiceImpl implements CartService {
     public void removeFromCart(Long userId, Long productId) {
         User user = userRepository.findById(userId)
             .orElseThrow(() -> new RuntimeException("User not found"));
-        
         Product product = productRepository.findById(productId)
             .orElseThrow(() -> new RuntimeException("Product not found"));
-        
         Cart cart = cartRepository.findByUser(user)
             .orElseThrow(() -> new RuntimeException("Cart not found"));
-        
         CartItem cartItem = cartItemRepository.findByCartAndProduct(cart, product)
             .orElseThrow(() -> new RuntimeException("Cart item not found"));
-        
         cartItemRepository.delete(cartItem);
         updateCartTotal(cart);
     }
@@ -143,10 +128,8 @@ public class CartServiceImpl implements CartService {
     public void clearCart(Long userId) {
         User user = userRepository.findById(userId)
             .orElseThrow(() -> new RuntimeException("User not found"));
-        
         Cart cart = cartRepository.findByUser(user)
             .orElseThrow(() -> new RuntimeException("Cart not found"));
-        
         cartItemRepository.deleteByCartId(cart.getId());
         cart.setTotalPrice(BigDecimal.ZERO);
         cartRepository.save(cart);
@@ -157,36 +140,37 @@ public class CartServiceImpl implements CartService {
     public CartDTO applyCoupon(Long userId, String couponCode) {
         User user = userRepository.findById(userId)
             .orElseThrow(() -> new RuntimeException("User not found"));
-        
+
         Cart cart = cartRepository.findByUser(user)
             .orElseThrow(() -> new RuntimeException("Cart not found"));
-        
+
         Coupon coupon = couponRepository.findByCode(couponCode)
             .orElseThrow(() -> new RuntimeException("Invalid coupon code"));
-        
-        // Check coupon validity
+
+        if (coupon.getExpirationDate() != null && coupon.getExpirationDate().isBefore(LocalDate.now())) {
+            throw new RuntimeException("Coupon has expired");
+        }
+
         if (coupon.getUsedCount() >= coupon.getUsageLimit()) {
             throw new RuntimeException("Coupon usage limit reached");
         }
-        
-        // Apply discount
-        BigDecimal discountAmount = BigDecimal.ZERO;
+
+        BigDecimal discount = BigDecimal.ZERO;
         if (coupon.getDiscountPercentage() != null) {
-            discountAmount = cart.getTotalPrice()
+            discount = cart.getTotalPrice()
                 .multiply(coupon.getDiscountPercentage())
                 .divide(BigDecimal.valueOf(100));
         } else if (coupon.getDiscountAmount() != null) {
-            discountAmount = coupon.getDiscountAmount();
+            discount = coupon.getDiscountAmount();
         }
-        
-        // Update coupon usage
+
+        if (discount.compareTo(cart.getTotalPrice()) > 0) discount = cart.getTotalPrice();
+
+        cart.setTotalPrice(cart.getTotalPrice().subtract(discount));
         coupon.setUsedCount(coupon.getUsedCount() + 1);
         couponRepository.save(coupon);
-        
-        // Apply discount to cart (in real implementation, you might store discount separately)
-        cart.setTotalPrice(cart.getTotalPrice().subtract(discountAmount));
         cartRepository.save(cart);
-        
+
         return convertToDTO(cart);
     }
     
@@ -204,7 +188,6 @@ public class CartServiceImpl implements CartService {
         cartDTO.setUserId(cart.getUser().getId());
         cartDTO.setTotalPrice(cart.getTotalPrice());
         
-        // Convert cart items
         cart.getCartItems().forEach(cartItem -> {
             CartItemDTO cartItemDTO = new CartItemDTO();
             cartItemDTO.setId(cartItem.getId());

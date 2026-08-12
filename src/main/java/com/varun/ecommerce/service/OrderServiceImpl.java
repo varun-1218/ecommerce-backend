@@ -53,88 +53,98 @@ public class OrderServiceImpl implements OrderService {
     
     @Override
     @Transactional
-    public OrderDTO placeOrder(Long userId, String shippingAddress, String paymentMethod, String couponCode) {
-        User user = userRepository.findById(userId)
-            .orElseThrow(() -> new RuntimeException("User not found"));
-        
-        Cart cart = cartRepository.findByUser(user)
-            .orElseThrow(() -> new RuntimeException("Cart is empty"));
-        
-        if (cart.getCartItems().isEmpty()) {
-            throw new RuntimeException("Cannot place order with empty cart");
+    public OrderDTO placeOrder(Long userId, String shippingAddress, String paymentMethod, String couponCode)
+    {
+        try
+        {
+        	User user = userRepository.findById(userId)
+                    .orElseThrow(() -> new RuntimeException("User not found"));
+                
+                Cart cart = cartRepository.findByUser(user)
+                    .orElseThrow(() -> new RuntimeException("Cart is empty"));
+                
+                if (cart.getCartItems().isEmpty()) {
+                    throw new RuntimeException("Cannot place order with empty cart");
+                }
+                
+                // Check stock availability
+                for (CartItem cartItem : cart.getCartItems()) {
+                    Product product = cartItem.getProduct();
+                    if (product.getStockQuantity() < cartItem.getQuantity()) {
+                        throw new RuntimeException("Insufficient stock for product: " + product.getName());
+                    }
+                }
+                
+                // Create order
+                Order order = new Order();
+                order.setUser(user);
+                order.setOrderTrackingNumber(generateTrackingNumber());
+                order.setShippingAddress(shippingAddress);
+                order.setPaymentMethod(paymentMethod);
+                order.setStatus("PENDING");
+                order.setOrderDate(LocalDateTime.now());
+                
+                // Apply coupon if provided
+                if (couponCode != null && !couponCode.isEmpty()) {
+                    Coupon coupon = couponRepository.findByCode(couponCode)
+                        .orElseThrow(() -> new RuntimeException("Invalid coupon code"));
+                    
+                    if (coupon.getUsedCount() >= coupon.getUsageLimit()) {
+                        throw new RuntimeException("Coupon usage limit reached");
+                    }
+                    
+                    order.setCoupon(coupon);
+                    
+                    // Calculate discount
+                    BigDecimal discount = BigDecimal.ZERO;
+                    if (coupon.getDiscountPercentage() != null) {
+                        discount = cart.getTotalPrice()
+                            .multiply(coupon.getDiscountPercentage())
+                            .divide(BigDecimal.valueOf(100));
+                    } else if (coupon.getDiscountAmount() != null) {
+                        discount = coupon.getDiscountAmount();
+                    }
+                    
+                    order.setDiscountAmount(discount);
+                    order.setTotalPrice(cart.getTotalPrice().subtract(discount));
+                    
+                    // Update coupon usage
+                    coupon.setUsedCount(coupon.getUsedCount() + 1);
+                    couponRepository.save(coupon);
+                } else {
+                    order.setTotalPrice(cart.getTotalPrice());
+                }
+                
+                Order savedOrder = orderRepository.save(order);
+                
+                // Create order items and update stock
+                for (CartItem cartItem : cart.getCartItems()) {
+                    OrderItem orderItem = new OrderItem();
+                    orderItem.setOrder(savedOrder);
+                    orderItem.setProduct(cartItem.getProduct());
+                    orderItem.setQuantity(cartItem.getQuantity());
+                    orderItem.setPrice(cartItem.getPrice());
+                    orderItemRepository.save(orderItem);
+                    
+                    // Update product stock
+                    Product product = cartItem.getProduct();
+                    product.setStockQuantity(product.getStockQuantity() - cartItem.getQuantity());
+                    productRepository.save(product);
+                }
+                
+             // Clear cart after order is placed
+                cartItemRepository.deleteByCartId(cart.getId());
+                cart.getCartItems().clear();  // Clear the collection to avoid stale references
+                cart.setTotalPrice(BigDecimal.ZERO);
+                cartRepository.save(cart);
+                
+                return convertToDTO(savedOrder);
         }
-        
-        // Check stock availability
-        for (CartItem cartItem : cart.getCartItems()) {
-            Product product = cartItem.getProduct();
-            if (product.getStockQuantity() < cartItem.getQuantity()) {
-                throw new RuntimeException("Insufficient stock for product: " + product.getName());
-            }
+        catch (Exception e) {
+            System.err.println("❌ Order placement failed: " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("Order placement failed: " + e.getMessage());
         }
-        
-        // Create order
-        Order order = new Order();
-        order.setUser(user);
-        order.setOrderTrackingNumber(generateTrackingNumber());
-        order.setShippingAddress(shippingAddress);
-        order.setPaymentMethod(paymentMethod);
-        order.setStatus("PENDING");
-        order.setOrderDate(LocalDateTime.now());
-        
-        // Apply coupon if provided
-        if (couponCode != null && !couponCode.isEmpty()) {
-            Coupon coupon = couponRepository.findByCode(couponCode)
-                .orElseThrow(() -> new RuntimeException("Invalid coupon code"));
-            
-            if (coupon.getUsedCount() >= coupon.getUsageLimit()) {
-                throw new RuntimeException("Coupon usage limit reached");
-            }
-            
-            order.setCoupon(coupon);
-            
-            // Calculate discount
-            BigDecimal discount = BigDecimal.ZERO;
-            if (coupon.getDiscountPercentage() != null) {
-                discount = cart.getTotalPrice()
-                    .multiply(coupon.getDiscountPercentage())
-                    .divide(BigDecimal.valueOf(100));
-            } else if (coupon.getDiscountAmount() != null) {
-                discount = coupon.getDiscountAmount();
-            }
-            
-            order.setDiscountAmount(discount);
-            order.setTotalPrice(cart.getTotalPrice().subtract(discount));
-            
-            // Update coupon usage
-            coupon.setUsedCount(coupon.getUsedCount() + 1);
-            couponRepository.save(coupon);
-        } else {
-            order.setTotalPrice(cart.getTotalPrice());
-        }
-        
-        Order savedOrder = orderRepository.save(order);
-        
-        // Create order items and update stock
-        for (CartItem cartItem : cart.getCartItems()) {
-            OrderItem orderItem = new OrderItem();
-            orderItem.setOrder(savedOrder);
-            orderItem.setProduct(cartItem.getProduct());
-            orderItem.setQuantity(cartItem.getQuantity());
-            orderItem.setPrice(cartItem.getPrice());
-            orderItemRepository.save(orderItem);
-            
-            // Update product stock
-            Product product = cartItem.getProduct();
-            product.setStockQuantity(product.getStockQuantity() - cartItem.getQuantity());
-            productRepository.save(product);
-        }
-        
-        // Clear cart
-        cartItemRepository.deleteByCartId(cart.getId());
-        cart.setTotalPrice(BigDecimal.ZERO);
-        cartRepository.save(cart);
-        
-        return convertToDTO(savedOrder);
     }
     
     @Override

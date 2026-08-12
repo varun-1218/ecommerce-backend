@@ -26,7 +26,7 @@ public class OrderController {
     private OrderService orderService;
     
     @PostMapping("/place")
-    public ResponseEntity<OrderDTO> placeOrder(
+    public ResponseEntity<?> placeOrder(
             @RequestParam Long userId,
             @RequestParam String shippingAddress,
             @RequestParam String paymentMethod,
@@ -35,7 +35,7 @@ public class OrderController {
             OrderDTO orderDTO = orderService.placeOrder(userId, shippingAddress, paymentMethod, couponCode);
             return ResponseEntity.status(HttpStatus.CREATED).body(orderDTO);
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
         }
     }
     
