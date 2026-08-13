@@ -25,22 +25,22 @@ public class AuthController {
     private UserService userService;
     
     @PostMapping("/signup")
-    public ResponseEntity<UserDTO> registerUser(@RequestBody AuthRequest authRequest) {
+    public ResponseEntity<?> registerUser(@RequestBody AuthRequest authRequest) {
         try {
             UserDTO userDTO = userService.registerUser(authRequest);
             return ResponseEntity.status(HttpStatus.CREATED).body(userDTO);
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
         }
     }
-    
+   
     @PostMapping("/login")
-    public ResponseEntity<AuthResponse> loginUser(@RequestBody AuthRequest authRequest) {
+    public ResponseEntity<?> loginUser(@RequestBody AuthRequest authRequest) {
         try {
             AuthResponse authResponse = userService.loginUser(authRequest);
             return ResponseEntity.ok(authResponse);
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(null);
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(e.getMessage());
         }
     }
     
